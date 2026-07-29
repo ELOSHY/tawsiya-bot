@@ -457,6 +457,10 @@ def webhook():
         ticker = data.get('ticker', 'غير محدد')
         clean_ticker = ticker.replace("TADAWUL:", "").replace("TASI:", "").strip()
 
+        # إذا لم يكن هناك action لكن فيه sl وtp1 → اعتبره شراء
+        if not action and (data.get('sl') or data.get('tp1') or data.get('price')):
+            action = 'buy'
+
         # ── إشارة شراء ──────────────────────────────────────
         if action == 'buy':
             stock_name = get_stock_name(ticker)
