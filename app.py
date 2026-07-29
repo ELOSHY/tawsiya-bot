@@ -2,6 +2,13 @@ from flask import Flask, request, jsonify
 import requests
 import os
 from datetime import datetime
+import threading
+from bs4 import BeautifulSoup
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    SCHEDULER_AVAILABLE = True
+except ImportError:
+    SCHEDULER_AVAILABLE = False
 
 app = Flask(__name__)
 
@@ -552,6 +559,136 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 
+# ══════════════════════════════════════════════════════════
+# جلب أخبار السوق السعودي
+# ══════════════════════════════════════════════════════════
+def fetch_saudi_market_news():
+    """جلب أحدث أخبار السوق السعودي من argaam"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        r = requests.get('https://www.argaam.com/ar/article/articlelist/tag/1', headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        articles = []
+        for item in soup.select('article, .article-item, .news-item')[:5]:
+            title = item.select_one('h2, h3, .title, a')
+            if title and len(title.get_text(strip=True)) > 20:
+                articles.append(title.get_text(strip=True))
+        return articles[:5]
+    except:
+        return []
+
+
+def fetch_tasi_data():
+    """جلب بيانات مؤشر تاسي"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get('https://www.saudiexchange.sa/wps/portal/saudiexchange/trading/market-summary', headers=headers, timeout=10)
+        return None
+    except:
+        return None
+
+
+def send_morning_briefing():
+    """إرسال ملخص صباحي قبل الجلسة"""
+    try:
+        now = datetime.now()
+        # لا ترسل في عطلة نهاية الأسبوع (الجمعة=4، السبت=5)
+        if now.weekday() in [4, 5]:
+            return
+
+        news = fetch_saudi_market_news()
+        news_text = ''
+        if news:
+            for i, item in enumerate(news[:3], 1):
+                news_text += f'  {i}. {item[:100]}\n'
+        else:
+            news_text = '  لا توجد أخبار متاحة حالياً\n'
+
+        message = (
+            f"🌅 <b>صباح الخير! ملخص السوق السعودي</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📅 <b>التاريخ:</b> {now.strftime('%Y/%m/%d')}\n"
+            f"⏰ <b>الجلسة تبدأ الساعة:</b> 10:00 صباحاً\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📰 <b>أبرز الأخبار:</b>\n"
+            f"{news_text}"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📊 <b>مؤشر تاسي الأسبوع الماضي:</b> متابعة مستمرة\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"⚠️ <i>هذه المعلومات للأغراض التعليمية فقط</i>"
+        )
+        send_telegram_message(message)
+    except Exception as e:
+        print(f'Error in morning briefing: {e}')
+
+
+def send_closing_summary():
+    """إرسال ملخص إغلاق السوق"""
+    try:
+        now = datetime.now()
+        # لا ترسل في عطلة نهاية الأسبوع
+        if now.weekday() in [4, 5]:
+            return
+
+        news = fetch_saudi_market_news()
+        news_text = ''
+        if news:
+            for i, item in enumerate(news[:3], 1):
+                news_text += f'  {i}. {item[:100]}\n'
+        else:
+            news_text = '  لا توجد أخبار متاحة حالياً\n'
+
+        message = (
+            f"🔔 <b>ملخص إغلاق السوق السعودي</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📅 <b>التاريخ:</b> {now.strftime('%Y/%m/%d')}\n"
+            f"⏰ <b>وقت الإغلاق:</b> 3:30 مساءً\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📰 <b>أبرز أخبار اليوم:</b>\n"
+            f"{news_text}"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💡 <b>تابع إشاراتنا غداً إن شاء الله</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"⚠️ <i>هذه المعلومات للأغراض التعليمية فقط</i>"
+        )
+        send_telegram_message(message)
+    except Exception as e:
+        print(f'Error in closing summary: {e}')
+
+
+# ══════════════════════════════════════════════════════════
+# تشغيل الجدولة التلقائية
+# ══════════════════════════════════════════════════════════
+def start_scheduler():
+    if not SCHEDULER_AVAILABLE:
+        print('APScheduler not available, skipping scheduler')
+        return
+    try:
+        scheduler = BackgroundScheduler(timezone='Asia/Riyadh')
+        # ملخص صباحي الساعة 9:00 صباحاً (الأحد-الخميس)
+        scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, day_of_week='sun-thu')
+        # ملخص إغلاق الساعة 3:30 مساءً (الأحد-الخميس)
+        scheduler.add_job(send_closing_summary, 'cron', hour=15, minute=30, day_of_week='sun-thu')
+        scheduler.start()
+        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily (Sun-Thu)')
+    except Exception as e:
+        print(f'Scheduler error: {e}')
+
+
+@app.route('/news', methods=['GET'])
+def send_news_now():
+    """endpoint لإرسال الأخبار يدوياً"""
+    try:
+        send_morning_briefing()
+        return jsonify({"status": "success", "message": "News sent!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    start_scheduler()
     app.run(host='0.0.0.0', port=port)
+else:
+    # تشغيل الجدولة عند بدء Gunicorn/Render
+    start_scheduler()
