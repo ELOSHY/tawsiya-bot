@@ -560,22 +560,65 @@ def webhook():
 
 
 # ══════════════════════════════════════════════════════════
-# جلب أخبار السوق السعودي
+# نظام مراقبة الأخبار التلقائي - كل 5 دقائق
 # ══════════════════════════════════════════════════════════
-def fetch_saudi_market_news():
-    """جلب أحدث أخبار السوق السعودي من argaam"""
+
+# مجموعة لتتبع الأخبار المُرسلة ومنع التكرار
+sent_news_hashes = set()
+
+def get_news_hash(title):
+    """توليد hash مختصر للخبر لمنع التكرار"""
+    import hashlib
+    return hashlib.md5(title.strip()[:80].encode('utf-8')).hexdigest()[:16]
+
+
+def fetch_argaam_news():
+    """جلب أحدث أخبار تاسي والشركات من أرقام"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         r = requests.get('https://www.argaam.com/ar/article/articlelist/tag/1', headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, 'html.parser')
         articles = []
-        for item in soup.select('article, .article-item, .news-item')[:5]:
-            title = item.select_one('h2, h3, .title, a')
-            if title and len(title.get_text(strip=True)) > 20:
-                articles.append(title.get_text(strip=True))
-        return articles[:5]
-    except:
+        # محاولة عدة selectors
+        for sel in ['h2 a', 'h3 a', '.article-title a', '.news-title a', 'article a']:
+            items = soup.select(sel)
+            for item in items:
+                txt = item.get_text(strip=True)
+                if len(txt) > 25 and txt not in articles:
+                    articles.append(txt)
+            if len(articles) >= 8:
+                break
+        return articles[:8]
+    except Exception as e:
+        print(f'fetch_argaam_news error: {e}')
         return []
+
+
+def fetch_fed_news():
+    """جلب أخبار الفيدرالي الأمريكي"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        r = requests.get('https://www.argaam.com/ar/article/articlelist/tag/6', headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        articles = []
+        for sel in ['h2 a', 'h3 a', '.article-title a', 'article a']:
+            items = soup.select(sel)
+            for item in items:
+                txt = item.get_text(strip=True)
+                if len(txt) > 25 and ('فيدرالي' in txt or 'فائدة' in txt or 'بنك' in txt or 'Fed' in txt.lower() or 'dollar' in txt.lower() or 'دولار' in txt):
+                    if txt not in articles:
+                        articles.append(txt)
+            if len(articles) >= 3:
+                break
+        return articles[:3]
+    except Exception as e:
+        print(f'fetch_fed_news error: {e}')
+        return []
+
+
+def fetch_saudi_market_news():
+    """جلب أحدث أخبار السوق السعودي من argaam (للتوافق مع الكود القديم)"""
+    return fetch_argaam_news()[:5]
 
 
 def fetch_tasi_data():
@@ -586,6 +629,68 @@ def fetch_tasi_data():
         return None
     except:
         return None
+
+
+def check_and_send_news():
+    """فحص الأخبار الجديدة كل 5 دقائق وإرسال غير المكررة"""
+    global sent_news_hashes
+    try:
+        now = datetime.now()
+        # فقط أيام العمل (الأحد=6, الاثنين=0, ..., الخميس=3) في ساعات السوق والمساء
+        # نرسل من 8 صباحاً حتى 11 مساءً
+        if now.hour < 8 or now.hour >= 23:
+            return
+        # تجاهل الجمعة (4) والسبت (5)
+        if now.weekday() in [4, 5]:
+            return
+
+        new_items = []
+
+        # ── أخبار تاسي والشركات ──
+        tasi_news = fetch_argaam_news()
+        for title in tasi_news:
+            h = get_news_hash(title)
+            if h not in sent_news_hashes:
+                sent_news_hashes.add(h)
+                new_items.append(('tasi', title))
+
+        # ── أخبار الفيدرالي ──
+        fed_news = fetch_fed_news()
+        for title in fed_news:
+            h = get_news_hash(title)
+            if h not in sent_news_hashes:
+                sent_news_hashes.add(h)
+                new_items.append(('fed', title))
+
+        # إرسال الأخبار الجديدة
+        if new_items:
+            # تجميع الأخبار في رسالة واحدة
+            tasi_items = [t for cat, t in new_items if cat == 'tasi']
+            fed_items  = [t for cat, t in new_items if cat == 'fed']
+
+            msg = ''
+            if tasi_items:
+                msg += '📢 <b>أخبار السوق السعودي</b>\n━━━━━━━━━━━━━━━\n'
+                for i, item in enumerate(tasi_items[:5], 1):
+                    msg += f'  {i}. {item[:120]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
+            if fed_items:
+                msg += '🇺🇸 <b>أخبار الفيدرالي الأمريكي</b>\n━━━━━━━━━━━━━━━\n'
+                for i, item in enumerate(fed_items[:3], 1):
+                    msg += f'  {i}. {item[:120]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
+
+            if msg:
+                msg += f'⏰ <i>{now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}</i>'
+                send_telegram_message(msg)
+                print(f'✅ Sent {len(new_items)} new news items at {now.strftime("%H:%M")}')
+
+        # تنظيف الـ cache إذا كبر كثيراً (أكثر من 500 خبر)
+        if len(sent_news_hashes) > 500:
+            sent_news_hashes = set(list(sent_news_hashes)[-200:])
+
+    except Exception as e:
+        print(f'check_and_send_news error: {e}')
 
 
 def send_morning_briefing():
@@ -669,8 +774,10 @@ def start_scheduler():
         scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, day_of_week='sun-thu')
         # ملخص إغلاق الساعة 3:30 مساءً (الأحد-الخميس)
         scheduler.add_job(send_closing_summary, 'cron', hour=15, minute=30, day_of_week='sun-thu')
+        # ✅ مراقبة الأخبار كل 5 دقائق (أيام العمل 8ص-11م)
+        scheduler.add_job(check_and_send_news, 'interval', minutes=5)
         scheduler.start()
-        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily (Sun-Thu)')
+        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily + News check every 5 min')
     except Exception as e:
         print(f'Scheduler error: {e}')
 
