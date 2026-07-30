@@ -594,6 +594,51 @@ def fetch_argaam_news():
         return []
 
 
+def fetch_earnings_news():
+    """جلب النتائج المالية للشركات السعودية فور صدورها"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                   'Accept-Language': 'ar,en;q=0.9'}
+        earnings = []
+
+        # ── مصدر 1: fxnewstoday (أفضل مصدر للنتائج) ──
+        try:
+            r = requests.get('https://www.fxnewstoday.ae/stocks/saudi-arabia-news', headers=headers, timeout=12)
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for sel in ['h2 a', 'h3 a', 'h2', 'h3', 'a']:
+                items = soup.select(sel)
+                for item in items:
+                    txt = item.get_text(strip=True)
+                    if len(txt) > 30 and any(k in txt for k in ['ربح', 'خسار', 'نتائج', 'أرباح', 'إيراد', 'مالي', 'توزيع']):
+                        if txt not in earnings:
+                            earnings.append(txt)
+                if len(earnings) >= 8:
+                    break
+        except Exception as e:
+            print(f'fxnewstoday earnings error: {e}')
+
+        # ── مصدر 2: argaam الرئيسي ──
+        try:
+            r2 = requests.get('https://www.argaam.com/ar', headers=headers, timeout=12)
+            soup2 = BeautifulSoup(r2.text, 'html.parser')
+            for sel in ['h2 a', 'h3 a', 'a']:
+                items = soup2.select(sel)
+                for item in items:
+                    txt = item.get_text(strip=True)
+                    if len(txt) > 25 and any(k in txt for k in ['ربح', 'خسار', 'نتائج', 'أرباح', 'إيراد', 'مالي']):
+                        if txt not in earnings:
+                            earnings.append(txt)
+                if len(earnings) >= 12:
+                    break
+        except Exception as e:
+            print(f'argaam earnings error: {e}')
+
+        return earnings[:10]
+    except Exception as e:
+        print(f'fetch_earnings_news error: {e}')
+        return []
+
+
 def fetch_fed_news():
     """جلب أخبار الفيدرالي الأمريكي"""
     try:
@@ -654,6 +699,14 @@ def check_and_send_news():
                 sent_news_hashes.add(h)
                 new_items.append(('tasi', title))
 
+        # ── النتائج المالية للشركات ──
+        earnings_news = fetch_earnings_news()
+        for title in earnings_news:
+            h = get_news_hash(title)
+            if h not in sent_news_hashes:
+                sent_news_hashes.add(h)
+                new_items.append(('earnings', title))
+
         # ── أخبار الفيدرالي ──
         fed_news = fetch_fed_news()
         for title in fed_news:
@@ -664,11 +717,16 @@ def check_and_send_news():
 
         # إرسال الأخبار الجديدة
         if new_items:
-            # تجميع الأخبار في رسالة واحدة
-            tasi_items = [t for cat, t in new_items if cat == 'tasi']
-            fed_items  = [t for cat, t in new_items if cat == 'fed']
+            tasi_items     = [t for cat, t in new_items if cat == 'tasi']
+            earnings_items = [t for cat, t in new_items if cat == 'earnings']
+            fed_items      = [t for cat, t in new_items if cat == 'fed']
 
             msg = ''
+            if earnings_items:
+                msg += '📊 <b>نتائج مالية جديدة ✨</b>\n━━━━━━━━━━━━━━━\n'
+                for i, item in enumerate(earnings_items[:5], 1):
+                    msg += f'  {i}. {item[:130]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
             if tasi_items:
                 msg += '📢 <b>أخبار السوق السعودي</b>\n━━━━━━━━━━━━━━━\n'
                 for i, item in enumerate(tasi_items[:5], 1):
@@ -683,7 +741,7 @@ def check_and_send_news():
             if msg:
                 msg += f'⏰ <i>{now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}</i>'
                 send_telegram_message(msg)
-                print(f'✅ Sent {len(new_items)} new news items at {now.strftime("%H:%M")}')
+                print(f'✅ Sent {len(new_items)} new items (earnings={len(earnings_items)}, tasi={len(tasi_items)}, fed={len(fed_items)}) at {now.strftime("%H:%M")}')
 
         # تنظيف الـ cache إذا كبر كثيراً (أكثر من 500 خبر)
         if len(sent_news_hashes) > 500:
