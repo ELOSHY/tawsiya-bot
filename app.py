@@ -573,18 +573,20 @@ def get_news_hash(title):
 
 
 def fetch_argaam_news():
-    """جلب أحدث أخبار تاسي والشركات من أرقام"""
+    """جلب أحدث أخبار تاسي والشركات من fxnewstoday"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        r = requests.get('https://www.argaam.com/ar/article/articlelist/tag/1', headers=headers, timeout=15)
-        soup = BeautifulSoup(r.text, 'html.parser')
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'ar,en;q=0.9'
+        }
         articles = []
-        # محاولة عدة selectors
-        for sel in ['h2 a', 'h3 a', '.article-title a', '.news-title a', 'article a']:
+        r = requests.get('https://www.fxnewstoday.ae/stocks/saudi-arabia-news', headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        for sel in ['h2 a', 'h3 a', 'h2', 'h3', 'a']:
             items = soup.select(sel)
             for item in items:
                 txt = item.get_text(strip=True)
-                if len(txt) > 25 and txt not in articles:
+                if len(txt) > 30 and txt not in articles:
                     articles.append(txt)
             if len(articles) >= 8:
                 break
