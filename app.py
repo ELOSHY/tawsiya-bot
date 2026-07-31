@@ -822,6 +822,16 @@ def send_closing_summary():
 # ══════════════════════════════════════════════════════════
 # تشغيل الجدولة التلقائية
 # ══════════════════════════════════════════════════════════
+def keep_alive_ping():
+    """Ping البوت نفسه كل 10 دقائق لمنع Render من النوم"""
+    try:
+        url = os.environ.get('RENDER_EXTERNAL_URL', 'https://tawsiya-bot.onrender.com')
+        requests.get(f'{url}/', timeout=10)
+        print(f'✅ Keep-Alive ping sent at {datetime.now().strftime("%H:%M")}')
+    except Exception as e:
+        print(f'Keep-Alive ping error: {e}')
+
+
 def start_scheduler():
     if not SCHEDULER_AVAILABLE:
         print('APScheduler not available, skipping scheduler')
@@ -834,8 +844,10 @@ def start_scheduler():
         scheduler.add_job(send_closing_summary, 'cron', hour=15, minute=30, day_of_week='sun-thu')
         # ✅ مراقبة الأخبار كل 5 دقائق (أيام العمل 8ص-11م)
         scheduler.add_job(check_and_send_news, 'interval', minutes=5)
+        # ✅ Keep-Alive: ping نفسه كل 10 دقائق لمنع Render من النوم
+        scheduler.add_job(keep_alive_ping, 'interval', minutes=10)
         scheduler.start()
-        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily + News check every 5 min')
+        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily + News every 5min + Keep-Alive every 10min')
     except Exception as e:
         print(f'Scheduler error: {e}')
 
