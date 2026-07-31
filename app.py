@@ -856,9 +856,37 @@ def start_scheduler():
 
 @app.route('/news', methods=['GET'])
 def send_news_now():
-    """endpoint لإرسال الأخبار يدوياً"""
+    """endpoint لإرسال آخر الأخبار يدوياً"""
     try:
-        send_morning_briefing()
+        from datetime import datetime
+        now = datetime.now()
+        # جلب الأخبار
+        articles = fetch_argaam_news()
+        earnings = fetch_earnings_news()
+        fed      = fetch_fed_news()
+
+        msg = ''
+        if earnings:
+            msg += '📊 <b>نتائج مالية جديدة ✨</b>\n━━━━━━━━━━━━━━━\n'
+            for i, a in enumerate(earnings[:5], 1):
+                msg += f'  {i}. {a[:130]}\n'
+            msg += '━━━━━━━━━━━━━━━\n'
+        if articles:
+            msg += '📢 <b>أخبار السوق السعودي</b>\n━━━━━━━━━━━━━━━\n'
+            for i, a in enumerate(articles[:5], 1):
+                msg += f'  {i}. {a[:120]}\n'
+            msg += '━━━━━━━━━━━━━━━\n'
+        if fed:
+            msg += '🇺🇸 <b>أخبار الفيدرالي</b>\n━━━━━━━━━━━━━━━\n'
+            for i, a in enumerate(fed[:3], 1):
+                msg += f'  {i}. {a[:120]}\n'
+            msg += '━━━━━━━━━━━━━━━\n'
+
+        if not msg:
+            msg = '📰 <b>لا توجد أخبار جديدة حالياً</b>\n'
+
+        msg += f'⏰ <i>{now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}</i>'
+        send_telegram_message(msg)
         return jsonify({"status": "success", "message": "News sent!"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
