@@ -678,6 +678,45 @@ def fetch_tasi_data():
         return None
 
 
+def fetch_breaking_news():
+    """جلب الأخبار العاجلة المؤثرة على السوق السعودي (حروب، نفط، جيوسياسية)"""
+    breaking = []
+    # كلمات مفتاحية للأخبار العاجلة
+    BREAKING_KEYWORDS = [
+        'حرب', 'ضربة', 'هجوم', 'صاروخ', 'طائرة', 'سفينة', 'انفجار',
+        'عقوبات', 'حظر', 'أزمة', 'طوارئ', 'تصعيد',
+        'oil', 'crude', 'نفط', 'برميل', 'أوبك', 'opec',
+        'فيدرالي', 'فائدة', 'fed', 'rate',
+        'ترامب', 'بايدن', 'تصريحات',
+        'الحوثي', 'غزة', 'لبنان', 'إيران', 'إسرائيل',
+        'سعودي', 'أرامكو', 'سابك', 'تاسي', 'السوق السعودي'
+    ]
+    try:
+        sources = [
+            'https://fxnewstoday.com/category/middle-east/',
+            'https://fxnewstoday.com/category/commodities/',
+            'https://fxnewstoday.com/category/economy/',
+        ]
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        for url in sources:
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                soup = BeautifulSoup(r.text, 'html.parser')
+                for tag in soup.find_all(['h2', 'h3', 'h4', 'a'], limit=30):
+                    title = tag.get_text(strip=True)
+                    if len(title) > 20:
+                        title_lower = title.lower()
+                        for kw in BREAKING_KEYWORDS:
+                            if kw.lower() in title_lower:
+                                breaking.append(title)
+                                break
+            except:
+                continue
+    except Exception as e:
+        print(f'Breaking news error: {e}')
+    return list(dict.fromkeys(breaking))[:10]  # إزالة التكرار
+
+
 def check_and_send_news():
     """فحص الأخبار الجديدة كل 5 دقائق وإرسال غير المكررة"""
     global sent_news_hashes
@@ -717,13 +756,27 @@ def check_and_send_news():
                 sent_news_hashes.add(h)
                 new_items.append(('fed', title))
 
+        # ── الأخبار العاجلة (حروب، نفط، جيوسياسية) ──
+        breaking_news = fetch_breaking_news()
+        for title in breaking_news:
+            h = get_news_hash(title)
+            if h not in sent_news_hashes:
+                sent_news_hashes.add(h)
+                new_items.append(('breaking', title))
+
         # إرسال الأخبار الجديدة
         if new_items:
             tasi_items     = [t for cat, t in new_items if cat == 'tasi']
             earnings_items = [t for cat, t in new_items if cat == 'earnings']
             fed_items      = [t for cat, t in new_items if cat == 'fed']
+            breaking_items = [t for cat, t in new_items if cat == 'breaking']
 
             msg = ''
+            if breaking_items:
+                msg += '🚨 <b>خبر عاجل يؤثر على السوق!</b>\n━━━━━━━━━━━━━━━\n'
+                for i, item in enumerate(breaking_items[:5], 1):
+                    msg += f'  {i}. {item[:130]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
             if earnings_items:
                 msg += '📊 <b>نتائج مالية جديدة ✨</b>\n━━━━━━━━━━━━━━━\n'
                 for i, item in enumerate(earnings_items[:5], 1):
@@ -787,14 +840,58 @@ def send_morning_briefing():
         print(f'Error in morning briefing: {e}')
 
 
+def fetch_tasi_price():
+    """جلب سعر تاسي الحقيقي من تداول السعودية"""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        r = requests.get('https://www.saudiexchange.sa/wps/portal/saudiexchange/ourmarkets/main-market-watch?locale=ar',
+                         headers=headers, timeout=15)
+        import re
+        text = r.text
+        # البحث عن سعر تاسي (نمط: 10,xxx.xx)
+        matches = re.findall(r'(1[0-9],\d{3}\.\d{2})', text)
+        if matches:
+            price = matches[0]
+            # البحث عن التغيير والنسبة
+            change_matches = re.findall(r'([+-]?\d{1,4}\.\d{2})\s*\(?\s*([+-]?\d{1,2}\.\d{2})\s*%?\s*\)?', text)
+            for cm in change_matches:
+                try:
+                    val = float(cm[0])
+                    pct = float(cm[1])
+                    if 0 < abs(pct) < 10:  # نسبة منطقية
+                        return price, cm[0], cm[1]
+                except:
+                    continue
+            return price, None, None
+    except Exception as e:
+        print(f'Error fetching TASI price: {e}')
+    return None, None, None
+
+
 def send_closing_summary():
-    """إرسال ملخص إغلاق السوق"""
+    """إرسال ملخص إغلاق السوق مع سعر تاسي الحقيقي"""
     try:
         now = datetime.now()
         # لا ترسل في عطلة نهاية الأسبوع
         if now.weekday() in [4, 5]:
             return
 
+        # جلب سعر تاسي الحقيقي
+        tasi_price, change_val, change_pct = fetch_tasi_price()
+
+        if tasi_price:
+            try:
+                pct = float(change_pct) if change_pct else 0
+                arrow = '📈' if pct >= 0 else '📉'
+                color = '🟢' if pct >= 0 else '🔴'
+                sign = '+' if pct >= 0 else ''
+                tasi_line = f"{arrow} <b>تاسي:</b> {tasi_price} نقطة  {color} ({sign}{change_pct}%)"
+            except:
+                tasi_line = f"📊 <b>تاسي:</b> {tasi_price} نقطة"
+        else:
+            tasi_line = "📊 <b>تاسي:</b> تعذّر جلب البيانات"
+
+        # جلب أبرز الأخبار
         news = fetch_saudi_market_news()
         news_text = ''
         if news:
@@ -803,20 +900,27 @@ def send_closing_summary():
         else:
             news_text = '  لا توجد أخبار متاحة حالياً\n'
 
+        # اليوم بالعربي
+        days_ar = ['الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد']
+        day_name = days_ar[now.weekday()]
+
         message = (
             f"🔔 <b>ملخص إغلاق السوق السعودي</b>\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"📅 <b>التاريخ:</b> {now.strftime('%Y/%m/%d')}\n"
-            f"⏰ <b>وقت الإغلاق:</b> 3:30 مساءً\n"
-            f"━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 <b>{day_name} {now.strftime('%d/%m/%Y')}</b>\n"
+            f"⏰ <b>إغلاق الساعة:</b> 3:30 مساءً\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{tasi_line}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📰 <b>أبرز أخبار اليوم:</b>\n"
             f"{news_text}"
-            f"━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💡 <b>تابع إشاراتنا غداً إن شاء الله</b>\n"
-            f"━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⚠️ <i>هذه المعلومات للأغراض التعليمية فقط</i>"
         )
         send_telegram_message(message)
+        print(f'✅ Closing summary sent: TASI={tasi_price}')
     except Exception as e:
         print(f'Error in closing summary: {e}')
 
