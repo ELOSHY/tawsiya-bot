@@ -1000,14 +1000,36 @@ def send_news_now():
 
 
 # ══════════════════════════════════════════════════════════
-# نظام التوصيات النشطة - لإرسالها للأعضاء الجدد
+# نظام التوصيات النشطة - محفوظة في ملف JSON
 # ══════════════════════════════════════════════════════════
-# قائمة التوصيات النشطة حالياً
-active_signals = []
-MAX_ACTIVE_SIGNALS = 10
+import json
+SIGNALS_FILE = '/tmp/active_signals.json'
+MAX_ACTIVE_SIGNALS = 50  # نحفظ آخر 50 توصية
+
+def load_active_signals():
+    """تحميل التوصيات من الملف"""
+    try:
+        if os.path.exists(SIGNALS_FILE):
+            with open(SIGNALS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except:
+        pass
+    return []
+
+def save_active_signals(signals):
+    """حفظ التوصيات في الملف"""
+    try:
+        with open(SIGNALS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(signals, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+# تحميل التوصيات عند بدء التشغيل
+active_signals = load_active_signals()
 
 def add_active_signal(ticker, stock_name, price, sl, tp1, tp2, tp3, timeframe):
-    """إضافة توصية جديدة للقائمة"""
+    """إضافة توصية جديدة للقائمة وحفظها"""
+    global active_signals
     signal = {
         'ticker': ticker,
         'name': stock_name,
@@ -1022,6 +1044,7 @@ def add_active_signal(ticker, stock_name, price, sl, tp1, tp2, tp3, timeframe):
     active_signals.insert(0, signal)
     if len(active_signals) > MAX_ACTIVE_SIGNALS:
         active_signals.pop()
+    save_active_signals(active_signals)
 
 def format_active_signals_message():
     """تنسيق رسالة التوصيات النشطة"""
