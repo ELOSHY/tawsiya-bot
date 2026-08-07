@@ -1027,21 +1027,13 @@ def format_active_signals_message():
     """تنسيق رسالة التوصيات النشطة"""
     if not active_signals:
         return None
-    msg = '📋 <b>آخر التوصيات النشطة</b>
-━━━━━━━━━━━━━━━
-'
+    msg = '📋 <b>آخر التوصيات النشطة</b>\n━━━━━━━━━━━━━━━\n'
     for i, s in enumerate(active_signals, 1):
-        msg += f"{i}. 🟢 <b>{s['name']} ({s['ticker']})</b>
-"
-        msg += f"   💰 الدخول: <b>{format_num(s['price'])}</b> | 🛑 الوقف: <b>{format_num(s['sl'])}</b>
-"
-        msg += f"   🎯 TP1: {format_num(s['tp1'])} | TP2: {format_num(s['tp2'])} | TP3: {format_num(s['tp3'])}
-"
-        msg += f"   📅 {s['date']}
-
-"
-    msg += '━━━━━━━━━━━━━━━
-'
+        msg += f"{i}. 🟢 <b>{s['name']} ({s['ticker']})</b>\n"
+        msg += f"   💰 الدخول: <b>{format_num(s['price'])}</b> | 🛑 الوقف: <b>{format_num(s['sl'])}</b>\n"
+        msg += f"   🎯 TP1: {format_num(s['tp1'])} | TP2: {format_num(s['tp2'])} | TP3: {format_num(s['tp3'])}\n"
+        msg += f"   📅 {s['date']}\n\n"
+    msg += '━━━━━━━━━━━━━━━\n'
     msg += '⚠️ <i>هذه التوصيات للأغراض التعليمية فقط</i>'
     return msg
 
@@ -1062,12 +1054,8 @@ def telegram_update():
                 welcome = ''
                 for m in new_members:
                     name = m.get('first_name', 'عضو جديد')
-                    welcome += f'👋 أهلاً <b>{name}</b> في مجموعة صائد الأسهم السعودية!
-'
-                welcome += '
-إليك آخر التوصيات النشطة:
-
-'
+                    welcome += f'👋 أهلاً <b>{name}</b> في مجموعة صائد الأسهم السعودية!\n'
+                welcome += '\nإليك آخر التوصيات النشطة:\n\n'
                 welcome += signals_msg
                 send_telegram_message(welcome)
         return jsonify({'ok': True}), 200
