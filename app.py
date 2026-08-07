@@ -512,10 +512,13 @@ def webhook():
             if score is not None:
                 message += f"🏆 <b>قوة الإشارة:</b> {score}/100\n"
             message += f"━━━━━━━━━━━━━━━\n⚠️ <i>هذه التوصيات للأغراض التعليمية فقط</i>"
-
             result = send_telegram_message(message)
+            # إضافة لقائمة التوصيات النشطة
+            try:
+                add_active_signal(clean_ticker, get_stock_name(ticker), price, stop_loss, target_1, target_2, target_3, timeframe)
+            except:
+                pass
             return jsonify({"status": "success", "telegram_response": result}), 200
-
         # ── إشارة بيع → تجاهل (السوق السعودي شراء فقط) ─────
         elif action == 'sell':
             return jsonify({"status": "ignored", "reason": "sell signals ignored"}), 200
@@ -995,6 +998,90 @@ def send_news_now():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ══════════════════════════════════════════════════════════
+# نظام التوصيات النشطة - لإرسالها للأعضاء الجدد
+# ══════════════════════════════════════════════════════════
+# قائمة التوصيات النشطة حالياً
+active_signals = []
+MAX_ACTIVE_SIGNALS = 10
+
+def add_active_signal(ticker, stock_name, price, sl, tp1, tp2, tp3, timeframe):
+    """إضافة توصية جديدة للقائمة"""
+    signal = {
+        'ticker': ticker,
+        'name': stock_name,
+        'price': price,
+        'sl': sl,
+        'tp1': tp1,
+        'tp2': tp2,
+        'tp3': tp3,
+        'time': timeframe,
+        'date': datetime.now().strftime('%Y/%m/%d %H:%M')
+    }
+    active_signals.insert(0, signal)
+    if len(active_signals) > MAX_ACTIVE_SIGNALS:
+        active_signals.pop()
+
+def format_active_signals_message():
+    """تنسيق رسالة التوصيات النشطة"""
+    if not active_signals:
+        return None
+    msg = '📋 <b>آخر التوصيات النشطة</b>
+━━━━━━━━━━━━━━━
+'
+    for i, s in enumerate(active_signals, 1):
+        msg += f"{i}. 🟢 <b>{s['name']} ({s['ticker']})</b>
+"
+        msg += f"   💰 الدخول: <b>{format_num(s['price'])}</b> | 🛑 الوقف: <b>{format_num(s['sl'])}</b>
+"
+        msg += f"   🎯 TP1: {format_num(s['tp1'])} | TP2: {format_num(s['tp2'])} | TP3: {format_num(s['tp3'])}
+"
+        msg += f"   📅 {s['date']}
+
+"
+    msg += '━━━━━━━━━━━━━━━
+'
+    msg += '⚠️ <i>هذه التوصيات للأغراض التعليمية فقط</i>'
+    return msg
+
+@app.route('/telegram_update', methods=['POST'])
+def telegram_update():
+    """استقبال تحديثات تيليجرام لاستقبال الأعضاء الجدد"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'ok': True}), 200
+        message = data.get('message', {})
+        if not message:
+            return jsonify({'ok': True}), 200
+        new_members = message.get('new_chat_members', [])
+        if new_members:
+            signals_msg = format_active_signals_message()
+            if signals_msg:
+                welcome = ''
+                for m in new_members:
+                    name = m.get('first_name', 'عضو جديد')
+                    welcome += f'👋 أهلاً <b>{name}</b> في مجموعة صائد الأسهم السعودية!
+'
+                welcome += '
+إليك آخر التوصيات النشطة:
+
+'
+                welcome += signals_msg
+                send_telegram_message(welcome)
+        return jsonify({'ok': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/active_signals', methods=['GET'])
+def get_active_signals():
+    """إرسال التوصيات النشطة للمجموعة"""
+    msg = format_active_signals_message()
+    if msg:
+        send_telegram_message(msg)
+        return jsonify({'status': 'success', 'count': len(active_signals)}), 200
+    return jsonify({'status': 'no_signals', 'message': 'لا توجد توصيات نشطة حالياً'}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
