@@ -472,11 +472,17 @@ def webhook():
         if action == 'buy':
             stock_name = get_stock_name(ticker)
 
-            price     = safe_float(data.get('price'))
-            stop_loss = safe_float(data.get('sl') or data.get('stop_loss') or data.get('plot_0'))
-            target_1  = safe_float(data.get('tp1') or data.get('target_1') or data.get('plot_1'))
-            target_2  = safe_float(data.get('tp2') or data.get('target_2') or data.get('plot_2'))
-            target_3  = safe_float(data.get('tp3') or data.get('target_3') or data.get('plot_3'))
+            price      = safe_float(data.get('price'))
+            entry_low  = safe_float(data.get('entry_low'))
+            entry_high = safe_float(data.get('entry_high'))
+            stop_loss  = safe_float(data.get('sl') or data.get('stop_loss') or data.get('plot_0'))
+            target_1   = safe_float(data.get('tp1') or data.get('target_1') or data.get('plot_1'))
+            target_2   = safe_float(data.get('tp2') or data.get('target_2') or data.get('plot_2'))
+            target_3   = safe_float(data.get('tp3') or data.get('target_3') or data.get('plot_3'))
+
+            # إذا جاء entry_low وentry_high بدل price، نستخدم المتوسط للحسابات
+            if entry_low and entry_high and not price:
+                price = round((entry_low + entry_high) / 2, 2)
 
             # حساب SL وTP تلقائياً إذا كانت null (2% افتراضي)
             if price and (stop_loss is None or target_1 is None):
@@ -498,7 +504,7 @@ def webhook():
                 f"🟢 <b>إشارة شراء جديدة!</b>\n"
                 f"━━━━━━━━━━━━━━━\n"
                 f"📊 <b>السهم:</b> {stock_name} ({clean_ticker})\n"
-                f"💰 <b>سعر الدخول:</b> {format_num(price)}\n"
+                f"💰 <b>منطقة الدخول:</b> {format_num(entry_low) + ' - ' + format_num(entry_high) if entry_low and entry_high else format_num(price)}\n"
                 f"🛑 <b>وقف مضاربي:</b> {format_num(stop_loss)}\n"
                 f"━━━━━━━━━━━━━━━\n"
                 f"⚽ <b>الهدف الأول:</b> {format_num(target_1)}\n"
