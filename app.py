@@ -672,6 +672,61 @@ def fetch_fed_news():
         return []
 
 
+def fetch_major_announcements():
+    """جلب الإعلانات المهمة: تغييرات كبار الملاك، إعلانات تداول، قرارات مجالس الإدارة"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'ar,en;q=0.9'
+        }
+        announcements = []
+        keywords = [
+            'تخارج', 'كبار الملاك', 'تغيير ملكية', 'استحواذ',
+            'اندماج', 'توزيع أرباح', 'أحقية', 'صرف أرباح',
+            'زيادة رأس المال', 'طرح أسهم', 'إصدار صكوك',
+            'عقد مهم', 'صفقة', 'شراكة', 'إيقاف تداول',
+            'عودة للتداول', 'توقف عن التداول', 'إدراج',
+            'خطة استراتيجية', 'تعيين', 'استقالة'
+        ]
+        # مصدر 1: argaam الرئيسي
+        try:
+            r = requests.get('https://www.argaam.com/ar', headers=headers, timeout=12)
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for sel in ['h2 a', 'h3 a', 'a']:
+                items = soup.select(sel)
+                for item in items:
+                    txt = item.get_text(strip=True)
+                    if len(txt) > 25 and any(k in txt for k in keywords):
+                        if txt not in announcements:
+                            announcements.append(txt)
+                if len(announcements) >= 8:
+                    break
+        except Exception as e:
+            print(f'major_announcements argaam error: {e}')
+
+        # مصدر 2: موقع تداول السعودية (إعلانات الشركات)
+        try:
+            r2 = requests.get('https://www.saudiexchange.sa/wps/portal/saudiexchange/newsandreports/issuer-news/issuer-announcements?locale=ar',
+                              headers=headers, timeout=12)
+            soup2 = BeautifulSoup(r2.text, 'html.parser')
+            for sel in ['h2 a', 'h3 a', '.news-title', 'a']:
+                items = soup2.select(sel)
+                for item in items:
+                    txt = item.get_text(strip=True)
+                    if len(txt) > 25 and any(k in txt for k in keywords):
+                        if txt not in announcements:
+                            announcements.append(txt)
+                if len(announcements) >= 12:
+                    break
+        except Exception as e:
+            print(f'major_announcements tadawul error: {e}')
+
+        return announcements[:8]
+    except Exception as e:
+        print(f'fetch_major_announcements error: {e}')
+        return []
+
+
 def fetch_saudi_market_news():
     """جلب أحدث أخبار السوق السعودي من argaam (للتوافق مع الكود القديم)"""
     return fetch_argaam_news()[:5]
@@ -773,12 +828,21 @@ def check_and_send_news():
                 sent_news_hashes.add(h)
                 new_items.append(('breaking', title))
 
+        # ── تغييرات كبار الملاك وإعلانات تداول ──
+        major_news = fetch_major_announcements()
+        for title in major_news:
+            h = get_news_hash(title)
+            if h not in sent_news_hashes:
+                sent_news_hashes.add(h)
+                new_items.append(('major', title))
+
         # إرسال الأخبار الجديدة
         if new_items:
             tasi_items     = [t for cat, t in new_items if cat == 'tasi']
             earnings_items = [t for cat, t in new_items if cat == 'earnings']
             fed_items      = [t for cat, t in new_items if cat == 'fed']
             breaking_items = [t for cat, t in new_items if cat == 'breaking']
+            major_items    = [t for cat, t in new_items if cat == 'major']
 
             msg = ''
             if breaking_items:
@@ -802,6 +866,11 @@ def check_and_send_news():
                     msg += f'  {i}. {item[:120]}\n'
                 msg += '━━━━━━━━━━━━━━━\n'
 
+            if major_items:
+                msg += '🚨 <b>إعلان مهم من تداول!</b>\n━━━━━━━━━━━━━━━\n'
+                for i, item in enumerate(major_items[:5], 1):
+                    msg += f'  {i}. {item[:130]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
             if msg:
                 msg += f'⏰ <i>{now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}</i>'
                 send_telegram_message(msg)
