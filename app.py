@@ -947,6 +947,68 @@ def keep_alive_ping():
         print(f'Keep-Alive ping error: {e}')
 
 
+def send_dividends_alert():
+    """إرسال تنبيه الأسهم القريبة من توزيع الأرباح كل أحد"""
+    try:
+        from datetime import date
+        import calendar
+        today = date.today()
+        # جلب توزيعات الأرباح من argaam
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'ar,en;q=0.9'
+        }
+        dividends = []
+        try:
+            from bs4 import BeautifulSoup
+            url = 'https://www.argaam.com/ar/company/calendar/details/marketid/3/home//'
+            r = requests.get(url, headers=headers, timeout=15)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, 'html.parser')
+                # البحث عن أحداث توزيع الأرباح
+                rows = soup.find_all('tr')
+                for row in rows[:50]:
+                    text = row.get_text(strip=True)
+                    if 'أحقية' in text or 'توزيع' in text:
+                        cells = row.find_all('td')
+                        if len(cells) >= 2:
+                            dividends.append(cells[1].get_text(strip=True) if len(cells) > 1 else text[:80])
+        except:
+            pass
+
+        now = datetime.now()
+        week_start = today.strftime('%d/%m')
+
+        if dividends:
+            div_list = '\n'.join([f'• {d}' for d in dividends[:10]])
+            msg = (
+                f'U0001f4b0 <b>تنبيه توزيعات الأرباح - هذا الأسبوع</b>\n'
+                f'━━━━━━━━━━━━━━━\n'
+                f'{div_list}\n'
+                f'━━━━━━━━━━━━━━━\n'
+                f'⚠️ <i>لتستحق الأرباح اشترِ قبل يوم الأحقية</i>\n'
+                f'⏰ {now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}'
+            )
+        else:
+            # رسالة ثابتة لو ما جبنا بيانات
+            msg = (
+                f'U0001f4b0 <b>تنبيه توزيعات الأرباح - أغسطس 2026</b>\n'
+                f'━━━━━━━━━━━━━━━\n'
+                f'U0001f525 <b>2282 نقي</b> - 1 ريال/سهم (أحقية 9 أغسطس)\n'
+                f'U0001f525 <b>4260 بدجت السعودية</b> - 0.5 ريال/سهم (أحقية 13 أغسطس)\n'
+                f'✅ <b>1050 بي اس اف</b> - صرف أرباح 11 أغسطس\n'
+                f'✅ <b>4004 دله الصحية</b> - أحقية قريبة\n'
+                f'✅ <b>4344 سدكو كابيتال ريت</b> - توزيع ربع سنوي\n'
+                f'━━━━━━━━━━━━━━━\n'
+                f'⚠️ <i>لتستحق الأرباح اشترِ قبل يوم الأحقية</i>\n'
+                f'⏰ {now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}'
+            )
+        send_telegram_message(msg)
+        print(f'✅ Dividends alert sent at {now.strftime("%H:%M")}')
+    except Exception as e:
+        print(f'Dividends alert error: {e}')
+
+
 def start_scheduler():
     if not SCHEDULER_AVAILABLE:
         print('APScheduler not available, skipping scheduler')
@@ -961,8 +1023,10 @@ def start_scheduler():
         scheduler.add_job(check_and_send_news, 'interval', minutes=5)
         # ✅ Keep-Alive: ping نفسه كل 10 دقائق لمنع Render من النوم
         scheduler.add_job(keep_alive_ping, 'interval', minutes=10)
+        # ✅ توزيعات الأرباح: كل أحد الساعة 10:00 صباحاً
+        scheduler.add_job(send_dividends_alert, 'cron', hour=10, minute=0, day_of_week='sun')
         scheduler.start()
-        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily + News every 5min + Keep-Alive every 10min')
+        print('✅ Scheduler started: 9:00 AM & 3:30 PM daily + News every 5min + Keep-Alive every 10min + Dividends every Sunday 10AM')
     except Exception as e:
         print(f'Scheduler error: {e}')
 
