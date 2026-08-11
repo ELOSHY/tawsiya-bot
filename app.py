@@ -484,6 +484,12 @@ def webhook():
             if entry_low and entry_high and not price:
                 price = round((entry_low + entry_high) / 2, 2)
 
+            # إذا جاء zone=true، نحسب منطقة الدخول تلقائياً من السعر (±1%)
+            zone = data.get('zone', False)
+            if zone and price and not (entry_low and entry_high):
+                entry_low  = round(price * 0.99, 2)
+                entry_high = round(price * 1.005, 2)
+
             # حساب SL وTP تلقائياً إذا كانت null (2% افتراضي)
             if price and (stop_loss is None or target_1 is None):
                 risk = price * 0.02
