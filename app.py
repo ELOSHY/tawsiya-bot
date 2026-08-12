@@ -1146,6 +1146,16 @@ def send_news_now():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/closing', methods=['GET'])
+def send_closing_now():
+    """مسار احتياطي لإرسال ملخص إغلاق تاسي يدوياً عند الحاجة"""
+    try:
+        send_closing_summary()
+        return jsonify({"status": "success", "message": "Closing summary sent!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ══════════════════════════════════════════════════════════
 # نظام التوصيات النشطة - محفوظة في ملف JSON
 # ══════════════════════════════════════════════════════════
