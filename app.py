@@ -488,10 +488,12 @@ def webhook():
             if entry_low and entry_high and not price:
                 price = round((entry_low + entry_high) / 2, 2)
 
-            # إذا جاء zone=true، نحسب منطقة الدخول تلقائياً من السعر (±1%)
-            zone = data.get('zone', False)
-            if zone and price and not (entry_low and entry_high):
-                entry_low  = round(price * 0.99, 2)
+            # منطقة الدخول الافتراضية: دائماً رقمين حول سعر الإشارة.
+            # تقبل zone كبوليان أو نص، وتبقى مفعّلة افتراضياً لحماية الرسائل القديمة.
+            zone_value = data.get('zone', True)
+            zone_enabled = str(zone_value).strip().lower() in {'true', '1', 'yes', 'on'}
+            if zone_enabled and price and not (entry_low and entry_high):
+                entry_low = round(price * 0.99, 2)
                 entry_high = round(price * 1.005, 2)
 
             # حساب SL وTP تلقائياً إذا كانت null (2% افتراضي)
@@ -1095,9 +1097,9 @@ def start_scheduler():
     try:
         scheduler = BackgroundScheduler(timezone='Asia/Riyadh')
         # ملخص صباحي الساعة 9:00 صباحاً (الأحد-الخميس)
-        scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, day_of_week='sun-thu')
+        scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, day_of_week='sun,mon,tue,wed,thu')
         # ملخص إغلاق الساعة 3:30 مساءً (الأحد-الخميس)
-        scheduler.add_job(send_closing_summary, 'cron', hour=15, minute=30, day_of_week='sun-thu')
+        scheduler.add_job(send_closing_summary, 'cron', hour=15, minute=30, day_of_week='sun,mon,tue,wed,thu')
         # ✅ مراقبة الأخبار كل 5 دقائق (أيام العمل 8ص-11م)
         scheduler.add_job(check_and_send_news, 'interval', minutes=5)
         # ✅ Keep-Alive: ping نفسه كل 10 دقائق لمنع Render من النوم
