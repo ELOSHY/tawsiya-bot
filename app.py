@@ -12,7 +12,7 @@ except ImportError:
 
 app = Flask(__name__)
 
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8722634125:AAE0N7Uj5FLlG8KRUeEDKYgFxuK11ShxX4o')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8982137667:AAErOIsfHMdhnfjHimQ5izH3GP6uX67-dI4')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '-1004107657002')
 
 # ══════════════════════════════════════════════════════════
