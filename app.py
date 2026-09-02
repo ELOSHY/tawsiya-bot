@@ -447,10 +447,34 @@ def format_num(val):
 
 
 def send_telegram_message(text):
+    if not TELEGRAM_TOKEN:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN is missing"}
+    if not CHAT_ID:
+        return {"ok": False, "error": "TELEGRAM_CHAT_ID is missing"}
+
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
-    response = requests.post(url, json=payload)
-    return response.json()
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        try:
+            data = response.json()
+        except ValueError:
+            data = {"ok": False, "description": response.text[:300]}
+        data["http_status"] = response.status_code
+        return data
+    except requests.RequestException as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.route('/telegram-test', methods=['GET'])
+def telegram_test():
+    result = send_telegram_message("✅ اختبار اتصال البوت مع تيليجرام")
+    status_code = 200 if result.get("ok") else 502
+    return jsonify({
+        "telegram": result,
+        "chat_id_configured": bool(CHAT_ID),
+        "token_configured": bool(TELEGRAM_TOKEN)
+    }), status_code
 
 
 @app.route('/', methods=['GET'])
