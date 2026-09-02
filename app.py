@@ -1263,4 +1263,6 @@ if __name__ == '__main__':
 else:
     # تشغيل الجدولة عند بدء Gunicorn/Render
     start_scheduler()
-Fix Telegram token to use Render environment variable
+else:
+    # تشغيل الجدولة عند بدء Gunicorn/Render
+    start_scheduler()
