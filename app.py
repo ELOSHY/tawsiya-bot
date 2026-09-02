@@ -558,7 +558,7 @@ def webhook():
             result = send_telegram_message(message)
             # إضافة لقائمة التوصيات النشطة
             try:
-                add_active_signal(clean_ticker, get_stock_name(ticker), price, stop_loss, target_1, target_2, target_3, timeframe)
+                add_active_signal(clean_ticker, get_stock_name(ticker), price, stop_loss, target_1, target_2, target_3, time_val)
             except:
                 pass
             return jsonify({"status": "success", "telegram_response": result}), 200
