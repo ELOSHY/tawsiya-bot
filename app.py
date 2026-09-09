@@ -779,44 +779,58 @@ def fetch_tasi_data():
         return None
 
 
-def fetch_breaking_news():
-    """جلب الأخبار العاجلة المؤثرة على السوق السعودي (حروب، نفط، جيوسياسية)"""
-    breaking = []
-    # كلمات مفتاحية للأخبار العاجلة
-    BREAKING_KEYWORDS = [
-        'حرب', 'ضربة', 'هجوم', 'صاروخ', 'طائرة', 'سفينة', 'انفجار',
-        'عقوبات', 'حظر', 'أزمة', 'طوارئ', 'تصعيد',
-        'oil', 'crude', 'نفط', 'برميل', 'أوبك', 'opec',
-        'فيدرالي', 'فائدة', 'fed', 'rate',
-        'ترامب', 'بايدن', 'تصريحات',
-        'الحوثي', 'غزة', 'لبنان', 'إيران', 'إسرائيل',
-        'سعودي', 'أرامكو', 'سابك', 'تاسي', 'السوق السعودي'
-    ]
-    try:
-        sources = [
-            'https://fxnewstoday.com/category/middle-east/',
-            'https://fxnewstoday.com/category/commodities/',
-            'https://fxnewstoday.com/category/economy/',
-        ]
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        for url in sources:
-            try:
-                r = requests.get(url, headers=headers, timeout=10)
-                soup = BeautifulSoup(r.text, 'html.parser')
-                for tag in soup.find_all(['h2', 'h3', 'h4', 'a'], limit=30):
-                    title = tag.get_text(strip=True)
-                    if len(title) > 20:
-                        title_lower = title.lower()
-                        for kw in BREAKING_KEYWORDS:
-                            if kw.lower() in title_lower:
-                                breaking.append(title)
-                                break
-            except:
-                continue
-    except Exception as e:
-        print(f'Breaking news error: {e}')
-    return list(dict.fromkeys(breaking))[:10]  # إزالة التكرار
+def is_market_moving_global_news(title):
+    """فلتر صارم: لا يمر إلا الخبر العالمي المرجح أن يؤثر فعلاً على تاسي."""
+    t = (title or '').lower().strip()
+    if len(t) < 25:
+        return False
 
+    # محركات السوق العالمية التي تهم تاسي مباشرة أو عبر النفط/السيولة/المخاطر.
+    high_impact = [
+        # الفيدرالي والسياسة النقدية الأمريكية
+        'federal reserve', 'fed ', 'fomc', 'powell', 'فيدرالي', 'باول',
+        'interest rate', 'rate cut', 'rate hike', 'خفض الفائدة', 'رفع الفائدة',
+        'التضخم الأمريكي', 'cpi', 'pce', 'nonfarm', 'وظائف أمريكية',
+        # النفط والطاقة
+        'brent', 'wti', 'crude oil', 'oil price', 'نفط', 'خام برنت', 'أوبك', 'opec', 'opec+',
+        # السعودية/الخليج
+        'saudi arabia', 'saudi', 'السعودية', 'أرامكو', 'aramco', 'تاسي', 'السوق السعودي',
+        # مخاطر جيوسياسية ذات صلة بالمنطقة أو الطاقة
+        'iran', 'إيران', 'israel', 'إسرائيل', 'gulf', 'الخليج', 'red sea', 'البحر الأحمر',
+        'hormuz', 'هرمز', 'yemen', 'اليمن', 'حوث', 'middle east', 'الشرق الأوسط',
+        # صدمات عالمية كبيرة
+        'tariff', 'تعرفة', 'عقوبات', 'sanction', 'recession', 'ركود',
+        'financial crisis', 'أزمة مالية', 'banking crisis', 'أزمة مصرفية',
+        'market crash', 'انهيار الأسواق', 'emergency meeting', 'اجتماع طارئ'
+    ]
+    return any(k in t for k in high_impact)
+
+
+def fetch_breaking_news():
+    """أخبار عالمية مؤثرة فقط؛ يمنع الضوضاء والأخبار العامة غير المرتبطة بتاسي."""
+    breaking = []
+    sources = [
+        'https://fxnewstoday.com/category/middle-east/',
+        'https://fxnewstoday.com/category/commodities/',
+        'https://fxnewstoday.com/category/economy/',
+        'https://www.argaam.com/ar'
+    ]
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'ar,en;q=0.9'
+    }
+    for url in sources:
+        try:
+            r = requests.get(url, headers=headers, timeout=12)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for tag in soup.find_all(['h1', 'h2', 'h3', 'h4', 'a'], limit=100):
+                title = ' '.join(tag.get_text(' ', strip=True).split())
+                if is_market_moving_global_news(title) and title not in breaking:
+                    breaking.append(title)
+        except Exception as e:
+            print(f'global news source error ({url}): {e}')
+    return breaking[:8]
 
 def check_and_send_news():
     """فحص الأخبار الجديدة كل 5 دقائق وإرسال غير المكررة"""
@@ -883,7 +897,7 @@ def check_and_send_news():
 
             msg = ''
             if breaking_items:
-                msg += '🚨 <b>خبر عاجل يؤثر على السوق!</b>\n━━━━━━━━━━━━━━━\n'
+                msg += '🌍🚨 <b>خبر عالمي مؤثر على السوق السعودي</b>\n━━━━━━━━━━━━━━━\n'
                 for i, item in enumerate(breaking_items[:5], 1):
                     msg += f'  {i}. {item[:130]}\n'
                 msg += '━━━━━━━━━━━━━━━\n'
