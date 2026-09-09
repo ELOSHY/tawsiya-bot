@@ -618,6 +618,40 @@ def get_news_hash(title):
     return hashlib.md5(title.strip()[:80].encode('utf-8')).hexdigest()[:16]
 
 
+
+
+def _norm_news(title):
+    return ' '.join((title or '').strip().lower().split())
+
+def is_earnings_news(title):
+    t = _norm_news(title)
+    if len(t) < 25:
+        return False
+    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'تحليل فني', 'توقعات المحللين', 'الحصة السوقية', 'متوسط سعر البيع']
+    if any(k in t for k in reject):
+        return False
+    strong = ['النتائج المالية', 'صافي الربح', 'صافي الخسارة', 'أرباحها', 'خسائرها', 'الأرباح', 'الإيرادات', 'الإيرادات ترتفع', 'الإيرادات تنخفض', 'توزيعات نقدية', 'توزيع أرباح', 'توصي بتوزيع', 'تعلن توزيع']
+    return any(k in t for k in strong)
+
+def is_material_saudi_news(title):
+    t = _norm_news(title)
+    if len(t) < 25:
+        return False
+    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'التحليل الفني', 'تحليل فني', 'رصد للأسهم', 'أدنى سعر منذ الإدراج', 'أعلى سعر منذ الإدراج', 'بيوت الخبرة', 'توقعات المحللين', 'متوسط سعر البيع', 'الحصة السوقية']
+    if any(k in t for k in reject):
+        return False
+    material = ['نتائج مالية', 'صافي الربح', 'صافي الخسارة', 'أرباح', 'خسائر', 'توزيع أرباح', 'توزيعات نقدية', 'استحواذ', 'اندماج', 'تخفيض رأس المال', 'زيادة رأس المال', 'إطفاء خسائر', 'عقد', 'اتفاقية', 'صفقة', 'طرح', 'إدراج', 'تعليق التداول', 'إيقاف التداول', 'عودة التداول', 'صكوك', 'تمويل', 'تخارج', 'تغيير ملكية', 'كبار الملاك', 'تصفية', 'إفلاس', 'إعادة هيكلة']
+    return any(k in t for k in material)
+
+def is_fed_high_impact(title):
+    t = _norm_news(title)
+    if len(t) < 25:
+        return False
+    fed = any(k in t for k in ['فيدرالي', 'الفيدرالي', 'federal reserve', 'fomc', 'باول', 'powell'])
+    macro = any(k in t for k in ['الفائدة', 'interest rate', 'خفض الفائدة', 'رفع الفائدة', 'التضخم', 'cpi', 'pce', 'الوظائف الأمريكية', 'nonfarm'])
+    decision = any(k in t for k in ['قرار', 'يقرر', 'يثبت', 'يخفض', 'يرفع', 'اجتماع', 'تصريحات', 'محضر'])
+    return (fed and (macro or decision)) or ('التضخم الأمريكي' in t) or ('وظائف أمريكية' in t)
+
 def fetch_argaam_news():
     """جلب أحدث أخبار تاسي والشركات من fxnewstoday"""
     try:
@@ -636,7 +670,7 @@ def fetch_argaam_news():
                     articles.append(txt)
             if len(articles) >= 8:
                 break
-        return articles[:8]
+        return [x for x in articles if is_material_saudi_news(x)][:8]
     except Exception as e:
         print(f'fetch_argaam_news error: {e}')
         return []
@@ -681,7 +715,7 @@ def fetch_earnings_news():
         except Exception as e:
             print(f'argaam earnings error: {e}')
 
-        return earnings[:10]
+        return [x for x in earnings if is_earnings_news(x)][:10]
     except Exception as e:
         print(f'fetch_earnings_news error: {e}')
         return []
@@ -703,7 +737,7 @@ def fetch_fed_news():
                         articles.append(txt)
             if len(articles) >= 3:
                 break
-        return articles[:3]
+        return [x for x in articles if is_fed_high_impact(x)][:3]
     except Exception as e:
         print(f'fetch_fed_news error: {e}')
         return []
@@ -758,7 +792,7 @@ def fetch_major_announcements():
         except Exception as e:
             print(f'major_announcements tadawul error: {e}')
 
-        return announcements[:8]
+        return [x for x in announcements if is_material_saudi_news(x)][:8]
     except Exception as e:
         print(f'fetch_major_announcements error: {e}')
         return []
@@ -1153,38 +1187,49 @@ def start_scheduler():
 
 @app.route('/news', methods=['GET'])
 def send_news_now():
-    """endpoint لإرسال آخر الأخبار يدوياً"""
+    """اختبار يدوي للفلتر الصارم للأخبار المهمة فقط"""
     try:
-        from datetime import datetime
         now = datetime.now()
-        # جلب الأخبار
-        articles = fetch_argaam_news()
         earnings = fetch_earnings_news()
-        fed      = fetch_fed_news()
+        articles = fetch_argaam_news()
+        fed = fetch_fed_news()
+        breaking = fetch_breaking_news()
+        major = fetch_major_announcements()
+
+        # إزالة التكرار بين الأقسام مع أولوية التصنيف الأدق
+        seen = set()
+        def unique(items):
+            out = []
+            for x in items:
+                h = get_news_hash(x)
+                if h not in seen:
+                    seen.add(h); out.append(x)
+            return out
+        earnings = unique(earnings)
+        major = unique(major)
+        articles = unique(articles)
+        fed = unique(fed)
+        breaking = unique(breaking)
 
         msg = ''
-        if earnings:
-            msg += '📊 <b>نتائج مالية جديدة ✨</b>\n━━━━━━━━━━━━━━━\n'
-            for i, a in enumerate(earnings[:5], 1):
-                msg += f'  {i}. {a[:130]}\n'
-            msg += '━━━━━━━━━━━━━━━\n'
-        if articles:
-            msg += '📢 <b>أخبار السوق السعودي</b>\n━━━━━━━━━━━━━━━\n'
-            for i, a in enumerate(articles[:5], 1):
-                msg += f'  {i}. {a[:120]}\n'
-            msg += '━━━━━━━━━━━━━━━\n'
-        if fed:
-            msg += '🇺🇸 <b>أخبار الفيدرالي</b>\n━━━━━━━━━━━━━━━\n'
-            for i, a in enumerate(fed[:3], 1):
-                msg += f'  {i}. {a[:120]}\n'
-            msg += '━━━━━━━━━━━━━━━\n'
-
+        sections = [
+            ('🌍🚨 <b>خبر عالمي مؤثر على السوق السعودي</b>', breaking, 5),
+            ('📊 <b>نتائج مالية جوهرية</b>', earnings, 5),
+            ('🚨 <b>إعلانات شركات جوهرية</b>', major, 5),
+            ('📢 <b>أخبار مؤثرة على السوق السعودي</b>', articles, 5),
+            ('🇺🇸 <b>الفيدرالي والاقتصاد الأمريكي</b>', fed, 3),
+        ]
+        for heading, items, limit in sections:
+            if items:
+                msg += heading + '\n━━━━━━━━━━━━━━━\n'
+                for i, a in enumerate(items[:limit], 1):
+                    msg += f'  {i}. {a[:140]}\n'
+                msg += '━━━━━━━━━━━━━━━\n'
         if not msg:
-            msg = '📰 <b>لا توجد أخبار جديدة حالياً</b>\n'
-
+            msg = '📰 <b>لا توجد أخبار جوهرية تستحق التنبيه حالياً</b>\n'
         msg += f'⏰ <i>{now.strftime("%H:%M")} | {now.strftime("%Y/%m/%d")}</i>'
-        send_telegram_message(msg)
-        return jsonify({"status": "success", "message": "News sent!"}), 200
+        result = send_telegram_message(msg)
+        return jsonify({"status":"success","message":"Filtered news sent!","telegram_ok":bool(result.get("ok"))}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
