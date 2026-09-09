@@ -623,11 +623,33 @@ def get_news_hash(title):
 def _norm_news(title):
     return ' '.join((title or '').strip().lower().split())
 
+def _news_words(title):
+    import re
+    stop = {'السعودية','السعوديه','شركة','شركه','تعلن','يعلن','عن','على','في','من','إلى','الى','مع','بقيمة','مليون','ريال'}
+    words = re.findall(r'[\w\u0600-\u06FF]+', _norm_news(title))
+    return {w for w in words if len(w) > 2 and w not in stop}
+
+def is_similar_news(a, b):
+    """منع تكرار نفس الحدث حتى لو اختلفت صياغة العنوان بين مصدرين."""
+    wa, wb = _news_words(a), _news_words(b)
+    if not wa or not wb:
+        return False
+    overlap = len(wa & wb)
+    ratio = overlap / max(1, min(len(wa), len(wb)))
+    return overlap >= 4 and ratio >= 0.60
+
+def dedupe_news(items):
+    out = []
+    for item in items:
+        if not any(is_similar_news(item, old) for old in out):
+            out.append(item)
+    return out
+
 def is_earnings_news(title):
     t = _norm_news(title)
     if len(t) < 25:
         return False
-    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'تحليل فني', 'توقعات المحللين', 'الحصة السوقية', 'متوسط سعر البيع']
+    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'تحليل فني', 'توقعات المحللين', 'الحصة السوقية', 'متوسط سعر البيع', 'مكررات الأرباح', 'آخر 12 شهر', 'توزيعات الأرباح النقدية 2025']
     if any(k in t for k in reject):
         return False
     strong = ['النتائج المالية', 'صافي الربح', 'صافي الخسارة', 'أرباحها', 'خسائرها', 'الأرباح', 'الإيرادات', 'الإيرادات ترتفع', 'الإيرادات تنخفض', 'توزيعات نقدية', 'توزيع أرباح', 'توصي بتوزيع', 'تعلن توزيع']
@@ -637,7 +659,7 @@ def is_material_saudi_news(title):
     t = _norm_news(title)
     if len(t) < 25:
         return False
-    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'التحليل الفني', 'تحليل فني', 'رصد للأسهم', 'أدنى سعر منذ الإدراج', 'أعلى سعر منذ الإدراج', 'بيوت الخبرة', 'توقعات المحللين', 'متوسط سعر البيع', 'الحصة السوقية']
+    reject = ['إجازة', 'عطلة', 'اليوم الوطني', 'التحليل الفني', 'تحليل فني', 'رصد للأسهم', 'أدنى سعر منذ الإدراج', 'أعلى سعر منذ الإدراج', 'بيوت الخبرة', 'توقعات المحللين', 'متوسط سعر البيع', 'الحصة السوقية', 'مكررات الأرباح', 'آخر 12 شهر', 'توزيعات الأرباح النقدية 2025']
     if any(k in t for k in reject):
         return False
     material = ['نتائج مالية', 'صافي الربح', 'صافي الخسارة', 'أرباح', 'خسائر', 'توزيع أرباح', 'توزيعات نقدية', 'استحواذ', 'اندماج', 'تخفيض رأس المال', 'زيادة رأس المال', 'إطفاء خسائر', 'عقد', 'اتفاقية', 'صفقة', 'طرح', 'إدراج', 'تعليق التداول', 'إيقاف التداول', 'عودة التداول', 'صكوك', 'تمويل', 'تخارج', 'تغيير ملكية', 'كبار الملاك', 'تصفية', 'إفلاس', 'إعادة هيكلة']
@@ -670,7 +692,7 @@ def fetch_argaam_news():
                     articles.append(txt)
             if len(articles) >= 8:
                 break
-        return [x for x in articles if is_material_saudi_news(x)][:8]
+        return dedupe_news([x for x in articles if is_material_saudi_news(x)])[:8]
     except Exception as e:
         print(f'fetch_argaam_news error: {e}')
         return []
@@ -715,7 +737,7 @@ def fetch_earnings_news():
         except Exception as e:
             print(f'argaam earnings error: {e}')
 
-        return [x for x in earnings if is_earnings_news(x)][:10]
+        return dedupe_news([x for x in earnings if is_earnings_news(x)])[:10]
     except Exception as e:
         print(f'fetch_earnings_news error: {e}')
         return []
@@ -792,7 +814,7 @@ def fetch_major_announcements():
         except Exception as e:
             print(f'major_announcements tadawul error: {e}')
 
-        return [x for x in announcements if is_material_saudi_news(x)][:8]
+        return dedupe_news([x for x in announcements if is_material_saudi_news(x)])[:8]
     except Exception as e:
         print(f'fetch_major_announcements error: {e}')
         return []
